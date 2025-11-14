@@ -160,6 +160,17 @@ function fly(e) {
   }
 }
 
+// Suporte para Touch Screen
+const touch = document.getElementById("gameCanvas");
+
+canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    if (gameRunning) {
+        jump();
+    }
+});
+
+
 // Atualiza o jogo (recebe pipeSpeed conforme dificuldade)
 function updateGame(currentPipeSpeed) {
   bird.velocity += bird.gravity;
