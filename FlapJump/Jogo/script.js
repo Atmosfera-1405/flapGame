@@ -48,6 +48,7 @@ let frameCount = 0;
 let ultimoEstadoPulo = false;
 let tempoUltimoPulo = 0;
 let playerName = "";
+let gameRunning = false;
 
 // Carrega último nome salvo no localStorage
 const last = localStorage.getItem("flappyLastPlayer");
@@ -137,7 +138,7 @@ function startCountdown() {
 // Inicia o jogo propriamente dito
 function startGame() {
   canvas.style.display = "block";
-
+  gameRunning = true;
   bird = { x: 50, y: 150, width: BIRD_SIZE, height: BIRD_SIZE, gravity: 0.5, lift: -8, velocity: 0 };
   pipes = [];
   score = 0;
@@ -161,14 +162,19 @@ function fly(e) {
 }
 
 // Suporte para Touch Screen
-const touch = document.getElementById("gameCanvas");
-
-canvas.addEventListener("touchstart", function (e) {
+document.addEventListener("touchstart", function (e) {
     e.preventDefault();
-    if (gameRunning) {
-        jump();
-    }
+
+    if (!gameRunning) return;
+
+    bird.velocity = bird.lift;
+
+    try {
+        jumpSound.currentTime = 0;
+        jumpSound.play();
+    } catch (e) {}
 });
+
 
 
 // Atualiza o jogo (recebe pipeSpeed conforme dificuldade)
@@ -244,6 +250,7 @@ function drawGame() {
 
 // Fim do jogo
 function endGame() {
+  gameRunning = false;
   clearInterval(gameInterval);
   document.removeEventListener("keydown", fly);
   try { gameplaySound.pause(); } catch (e) {}
