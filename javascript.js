@@ -1,6 +1,6 @@
-// script.js - versão corrigida (visibilidade controlada por style.display)
+// script.js - versão corrigida (suporte mouse/touch/pointer + autoplay tratado)
 
-// Canvas
+// Canvas e contexto
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -38,7 +38,7 @@ const roboQueda = new Image(); roboQueda.src = "Imagens/queda.png";
 
 const BIRD_SIZE = 20;
 
-// Dificuldade - Opção A: muda apenas velocidade dos canos
+// Dificuldade
 const pipeSpeedMap = { facil: 2, medio: 3, dificil: 4.3 };
 let selectedDifficulty = "medio";
 
@@ -49,22 +49,26 @@ let ultimoEstadoPulo = false;
 let tempoUltimoPulo = 0;
 let playerName = "";
 let gameRunning = false;
+let userInteracted = false; // marca se o usuário já interagiu (para desbloquear áudio)
 
 // Carrega último nome salvo no localStorage
 const last = localStorage.getItem("flappyLastPlayer");
 if (last) playerNameInput.value = last;
 
-// Função para tocar som (com proteção para erro de autoplay)
-function playSound(sound, loop = false) {
+// Toca som com tratamento de promise (rejeição silenciosa)
+function safePlay(sound, loop = false) {
   if (!sound) return;
   sound.loop = loop;
-  try {
-    sound.currentTime = 0;
-    sound.play();
-  } catch (e) {}
+  // só tenta tocar se o usuário já interagiu (política de autoplay)
+  if (!userInteracted) return;
+  const p = sound.play();
+  if (p && p.catch) p.catch(() => {});
 }
 
-// Inicializa visibilidade (garante estado consistente)
+// Não tente tocar sons automaticamente aqui.
+// Ao invés disso, iremos habilitar o áudio após a primeira interação do usuário.
+
+// Inicializa visibilidade das telas
 function showMenu() {
   menu.style.display = "block";
   difficultyScreen.style.display = "none";
@@ -76,9 +80,26 @@ function showMenu() {
   instructionsScreen.style.display = "none";
 }
 showMenu();
-playSound(menuSound);
 
-// -------------------- Fluxo: iniciar → escolher dificuldade → contagem → jogo
+// --- Detecta a primeira interação do usuário para desbloquear áudio ---
+// Captura interações simples: click, pointerdown, keydown, touchstart.
+function onFirstUserInteraction(e) {
+  userInteracted = true;
+  // tenta tocar som de menu (silencioso se falhar)
+  try {
+    menuSound.currentTime = 0;
+    menuSound.play().catch(() => {});
+  } catch (err) {}
+  // remove esse listener (só precisa da primeira interação)
+  window.removeEventListener("pointerdown", onFirstUserInteraction);
+  window.removeEventListener("keydown", onFirstUserInteraction);
+  window.removeEventListener("touchstart", onFirstUserInteraction);
+}
+window.addEventListener("pointerdown", onFirstUserInteraction);
+window.addEventListener("keydown", onFirstUserInteraction);
+window.addEventListener("touchstart", onFirstUserInteraction, { passive: true });
+
+// -------------------- Fluxo: iniciar → dificuldade → contagem → jogo
 startBtn.onclick = () => {
   const name = playerNameInput.value.trim();
   if (!name || name.length < 2) {
@@ -86,33 +107,29 @@ startBtn.onclick = () => {
     return;
   }
   playerName = name;
-  localStorage.setItem("flappyLastPlayer", playerName); // salva último nome
-  // mostra tela de dificuldade
+  localStorage.setItem("flappyLastPlayer", playerName);
   menu.style.display = "none";
   difficultyScreen.style.display = "block";
 };
 
-// voltar da difficulty para menu
 backToMenuFromDifficulty.onclick = () => {
   difficultyScreen.style.display = "none";
   menu.style.display = "block";
 };
 
-// botões de dificuldade
 document.querySelectorAll(".difficultyBtn").forEach(btn => {
   btn.addEventListener("click", () => {
-    const diff = btn.dataset.diff || "medio";
-    selectedDifficulty = diff;
+    selectedDifficulty = btn.dataset.diff || "medio";
     difficultyScreen.style.display = "none";
-    startCountdown(); // inicia "Boa sorte" + contador
+    startCountdown();
   });
 });
 
-// Contagem regressiva (3s) com mensagem "Boa sorte, [nome]!"
+// Contagem regressiva
 function startCountdown() {
   welcomeMessage.textContent = `Boa sorte, ${playerName}!`;
   welcomeMessage.style.display = "block";
-  playSound(menuSound);
+  safePlay(menuSound, false);
 
   setTimeout(() => {
     welcomeMessage.style.display = "none";
@@ -122,11 +139,9 @@ function startCountdown() {
 
     const timer = setInterval(() => {
       n--;
-      if (n >= 1) {
-        countdown.textContent = n;
-      } else if (n === 0) {
-        countdown.textContent = "GO!";
-      } else {
+      if (n >= 1) countdown.textContent = n;
+      else if (n === 0) countdown.textContent = "GO!";
+      else {
         clearInterval(timer);
         countdown.style.display = "none";
         startGame();
@@ -135,7 +150,7 @@ function startCountdown() {
   }, 1400);
 }
 
-// Inicia o jogo propriamente dito
+// -------------------- Jogo --------------------
 function startGame() {
   canvas.style.display = "block";
   gameRunning = true;
@@ -144,40 +159,45 @@ function startGame() {
   score = 0;
   frameCount = 0;
 
-  // som de gameplay
-  try { menuSound.pause(); } catch {}
-  playSound(gameplaySound, true);
+  // toca som de gameplay somente se o usuário já interagiu
+  safePlay(gameplaySound, true);
 
   if (gameInterval) clearInterval(gameInterval);
   document.addEventListener("keydown", fly);
+  // atualiza com intervalo
   gameInterval = setInterval(() => updateGame(pipeSpeedMap[selectedDifficulty]), 20);
 }
 
-// Função de pulo
-function fly(e) {
-  if (e.code === "Space" || e.code === "ArrowUp") {
-    bird.velocity = bird.lift;
-    try { jumpSound.currentTime = 0; jumpSound.play(); } catch (e) {}
-  }
+// Função de pulo unificada
+function doJump() {
+  if (!gameRunning || !bird) return;
+  bird.velocity = bird.lift;
+  safePlay(jumpSound, false);
 }
 
-// Suporte para Touch Screen
-document.addEventListener("touchstart", function (e) {
-    e.preventDefault();
+// Fly para teclado
+function fly(e) {
+  if (!e) return;
+  if (e.code === "Space" || e.code === "ArrowUp") doJump();
+}
 
-    if (!gameRunning) return;
+// Função que responde a ponteiros (mouse/touch)
+function onCanvasPointer(e) {
+  // só pular se o jogo estiver rodando
+  if (!gameRunning) return;
+  // impedir comportamento padrão em alguns dispositivos (zoom/scroll)
+  if (e.cancelable) e.preventDefault();
+  doJump();
+}
 
-    bird.velocity = bird.lift;
+// Adiciona os listeners no canvas (pointer cobre mouse/touch/stylus)
+canvas.addEventListener("pointerdown", onCanvasPointer, { passive: false });
+/* fallbacks opcionais — não causam problemas:
+canvas.addEventListener("touchstart", onCanvasPointer, { passive: false });
+canvas.addEventListener("mousedown", onCanvasPointer);
+*/
 
-    try {
-        jumpSound.currentTime = 0;
-        jumpSound.play();
-    } catch (e) {}
-});
-
-
-
-// Atualiza o jogo (recebe pipeSpeed conforme dificuldade)
+// Atualização do jogo
 function updateGame(currentPipeSpeed) {
   bird.velocity += bird.gravity;
   bird.y += bird.velocity;
@@ -192,7 +212,6 @@ function updateGame(currentPipeSpeed) {
     const pipe = pipes[i];
     pipe.x -= currentPipeSpeed;
 
-    // colisão
     if (
       bird.x < pipe.x + pipe.width &&
       bird.x + bird.width > pipe.x &&
@@ -202,17 +221,15 @@ function updateGame(currentPipeSpeed) {
       return;
     }
 
-    // pontuação
     if (!pipe.passed && pipe.x + pipe.width < bird.x) {
       pipe.passed = true;
       score++;
-      try { pontoSound.currentTime = 0; pontoSound.play(); } catch (e) {}
+      safePlay(pontoSound, false);
     }
 
     if (pipe.x + pipe.width < 0) pipes.splice(i, 1);
   }
 
-  // colisão com chão/ceiling
   if (bird.y + bird.height > canvas.height || bird.y < 0) {
     endGame();
     return;
@@ -221,7 +238,7 @@ function updateGame(currentPipeSpeed) {
   drawGame();
 }
 
-// Desenha o jogo
+// Desenho
 function drawGame() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -235,14 +252,12 @@ function drawGame() {
   const roboAtual = ultimoEstadoPulo ? roboPulo : roboQueda;
   ctx.drawImage(roboAtual, bird.x, bird.y, BIRD_SIZE, BIRD_SIZE);
 
-  // canos
   ctx.fillStyle = "green";
   pipes.forEach(pipe => {
     ctx.fillRect(pipe.x, 0, pipe.width, pipe.topHeight);
     ctx.fillRect(pipe.x, pipe.bottomY, pipe.width, canvas.height - pipe.bottomY);
   });
 
-  // pontuação
   ctx.fillStyle = "white";
   ctx.font = "20px Arial";
   ctx.fillText("Score: " + score, 10, 25);
@@ -254,7 +269,7 @@ function endGame() {
   clearInterval(gameInterval);
   document.removeEventListener("keydown", fly);
   try { gameplaySound.pause(); } catch (e) {}
-  playSound(gameOverSound);
+  safePlay(gameOverSound, false);
 
   canvas.style.display = "none";
   gameOverScreen.style.display = "block";
@@ -263,9 +278,8 @@ function endGame() {
   saveScore(playerName, score);
 }
 
-// Ranking (localStorage)
+// Ranking
 function saveScore(name, points) {
-  if (!name || typeof points !== "number") return;
   const key = "flappyRanking";
   let ranking = JSON.parse(localStorage.getItem(key)) || [];
   ranking.push({ name, points });
@@ -279,17 +293,12 @@ function showRanking() {
   canvas.style.display = "none";
   instructionsScreen.style.display = "none";
   rankingScreen.style.display = "block";
-  playSound(menuSound);
+  safePlay(menuSound, false);
 
   const ranking = JSON.parse(localStorage.getItem("flappyRanking")) || [];
-  if (ranking.length === 0) {
-    rankingList.innerHTML = "<li>Nenhum ponto registrado ainda.</li>";
-    return;
-  }
-
-  rankingList.innerHTML = ranking
-    .map((r,i) => `<li>${i+1}. ${r.name} - ${r.points} pts</li>`)
-    .join("");
+  rankingList.innerHTML = ranking.length === 0
+    ? "<li>Nenhum ponto registrado ainda.</li>"
+    : ranking.map((r,i) => `<li>${i+1}. ${r.name} - ${r.points} pts</li>`).join("");
 }
 
 function clearRanking() {
@@ -301,35 +310,37 @@ function clearRanking() {
 
 // Handlers UI
 restartBtn.onclick = () => {
-  // mantém o nome no campo
-  playerNameInput.value = playerName || localStorage.getItem("flappyLastPlayer") || "";
+  playerNameInput.value = playerName;
   gameOverScreen.style.display = "none";
-  difficultyScreen.style.display = "block"; // volta para escolher dificuldade
-  playSound(menuSound);
+  difficultyScreen.style.display = "block";
+  safePlay(menuSound, false);
 };
 
 backToMenuBtn.onclick = () => {
   gameOverScreen.style.display = "none";
   menu.style.display = "block";
-  playerNameInput.value = playerName || localStorage.getItem("flappyLastPlayer") || "";
-  playSound(menuSound);
+  playerNameInput.value = playerName;
+  safePlay(menuSound, false);
 };
 
 rankingBtn.onclick = showRanking;
+
 backToMenuFromRanking.onclick = () => {
   rankingScreen.style.display = "none";
   menu.style.display = "block";
-  playSound(menuSound);
+  safePlay(menuSound, false);
 };
+
 clearRankingBtn.onclick = clearRanking;
 
 instructionsBtn.onclick = () => {
   menu.style.display = "none";
   instructionsScreen.style.display = "block";
-  playSound(menuSound);
+  safePlay(menuSound, false);
 };
+
 backToMenuFromInstructions.onclick = () => {
   instructionsScreen.style.display = "none";
   menu.style.display = "block";
-  playSound(menuSound);
+  safePlay(menuSound, false);
 };
