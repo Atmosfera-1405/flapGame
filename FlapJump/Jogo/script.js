@@ -48,7 +48,6 @@ let frameCount = 0;
 let ultimoEstadoPulo = false;
 let tempoUltimoPulo = 0;
 let playerName = "";
-let gameRunning = false;
 
 // Carrega último nome salvo no localStorage
 const last = localStorage.getItem("flappyLastPlayer");
@@ -138,7 +137,7 @@ function startCountdown() {
 // Inicia o jogo propriamente dito
 function startGame() {
   canvas.style.display = "block";
-  gameRunning = true;
+
   bird = { x: 50, y: 150, width: BIRD_SIZE, height: BIRD_SIZE, gravity: 0.5, lift: -8, velocity: 0 };
   pipes = [];
   score = 0;
@@ -150,32 +149,31 @@ function startGame() {
 
   if (gameInterval) clearInterval(gameInterval);
   document.addEventListener("keydown", fly);
+  document.addEventListener("click", fly);
+  document.addEventListener("touchstart", fly, { passive: false });
   gameInterval = setInterval(() => updateGame(pipeSpeedMap[selectedDifficulty]), 20);
 }
 
-// Função de pulo
+// Função para receber o comando do pulo (via teclado, mouse ou toque)
 function fly(e) {
-  if (e.code === "Space" || e.code === "ArrowUp") {
-    bird.velocity = bird.lift;
-    try { jumpSound.currentTime = 0; jumpSound.play(); } catch (e) {}
+  // Evita bug no mobile em que o touch scrolla a tela
+  e.preventDefault();
+  // Se for teclado
+  if (e.type === "keydown") {
+    if (e.code === "Space" || e.code === "ArrowUp") {
+      doJump();
+    }
+  }
+  // Para mouse ou toque, basta chamar pulo diretamente
+  if (e.type === "click" || e.type === "touchstart") {
+    doJump();
   }
 }
-
-// Suporte para Touch Screen
-document.addEventListener("touchstart", function (e) {
-    e.preventDefault();
-
-    if (!gameRunning) return;
-
-    bird.velocity = bird.lift;
-
-    try {
-        jumpSound.currentTime = 0;
-        jumpSound.play();
-    } catch (e) {}
-});
-
-
+// Funçaõ do pulo
+function doJump() {
+  bird.velocity = bird.lift;
+  try { jumpSound.currentTime = 0; jumpSound.play(); } catch {}
+}
 
 // Atualiza o jogo (recebe pipeSpeed conforme dificuldade)
 function updateGame(currentPipeSpeed) {
@@ -250,7 +248,6 @@ function drawGame() {
 
 // Fim do jogo
 function endGame() {
-  gameRunning = false;
   clearInterval(gameInterval);
   document.removeEventListener("keydown", fly);
   try { gameplaySound.pause(); } catch (e) {}

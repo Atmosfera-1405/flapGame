@@ -11,10 +11,11 @@ body {
   margin: 0;
   overflow: hidden;
   position: relative;
-  touch-action: none;
+  /* touch-action: none;  <-- removido para evitar comportamento indesejado em alguns navegadores */
 }
 
-/* Canvas de gameplay */
+/* Canvas tela da gameplay */
+/* coloque o canvas acima do fundo e abaixo das telas (z-index controlado) */
 #gameCanvas {
   display: none;
   width: 320px;
@@ -23,9 +24,11 @@ body {
   box-shadow: 0 0 20px rgba(0,0,0,0.2);
   background: url('Imagens/Fundo.webp') no-repeat center center;
   background-size: cover;
+  z-index: 1;
+  pointer-events: auto; /* garante que eventos alcançam o canvas */
 }
 
-/* Telas */
+/* Telas (menu, ranking, etc) */
 #menu, #gameOverScreen, #rankingScreen, #instructionsScreen, #difficultyScreen {
   text-align: center;
   display: none;
@@ -35,7 +38,8 @@ body {
   border-radius: 10px;
   width: 300px;
   box-shadow: 0 0 20px rgba(0,0,0,0.7);
-  z-index: 5;
+  z-index: 5; /* acima do canvas quando visíveis */
+  pointer-events: auto;
 }
 
 #menu { display: block; } /* mostra por padrão */
@@ -86,6 +90,7 @@ input[type="text"] {
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
   text-align: center;
   z-index: 10;
+  pointer-events: none;
 }
 #countdown {
   position: absolute;
@@ -97,6 +102,7 @@ input[type="text"] {
   font-weight: bold;
   text-shadow: 0 0 20px black;
   z-index: 11;
+  pointer-events: none;
 }
 
 /* classes utilitárias */
